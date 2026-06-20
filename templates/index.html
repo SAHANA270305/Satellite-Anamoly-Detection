@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SatAD — Satellite Anomaly Detection</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  * { font-family: 'Inter', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .glass {
+    background: rgba(15,23,42,0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(51,65,85,0.6);
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, #60A5FA, #A78BFA, #34D399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .metric-card {
+    background: linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,23,42,0.9));
+    border: 1px solid rgba(99,102,241,0.3);
+    transition: all 0.3s ease;
+  }
+  .metric-card:hover {
+    border-color: rgba(99,102,241,0.7);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(99,102,241,0.15);
+  }
+  .tab-btn { transition: all 0.2s ease; }
+  .tab-btn.active {
+    background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+    color: white;
+  }
+  .table-row:hover { background: rgba(99,102,241,0.08); }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #0F172A; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  .spinner {
+    border: 3px solid rgba(99,102,241,0.2);
+    border-top-color: #6366F1;
+    border-radius: 50%;
+    width: 32px; height: 32px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fade-in { animation: fadeIn 0.4s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  .pulse-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #10B981;
+    box-shadow: 0 0 0 0 rgba(16,185,129,0.4);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%  { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+    70% { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+  }
+</style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+<!-- ── Starfield background ─────────────────────────────────── -->
+<canvas id="stars" class="fixed inset-0 pointer-events-none opacity-40" style="z-index:0"></canvas>
+
+<!-- ── Navbar ───────────────────────────────────────────────── -->
+<nav class="fixed top-0 left-0 right-0 z-50 glass border-b border-slate-800">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-lg">🛰</div>
+      <div>
+        <span class="font-bold text-lg gradient-text">SatAD</span>
+        <span class="text-slate-400 text-sm ml-2 hidden sm:inline">Satellite Anomaly Detection</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="pulse-dot"></div>
+      <span class="text-emerald-400 text-sm font-medium mono">LIVE</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────── -->
+<section class="relative pt-28 pb-16 px-6 text-center" style="z-index:1">
+  <div class="max-w-3xl mx-auto">
+    <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-violet-500/40 bg-violet-500/10 text-violet-300 text-sm mb-6 mono">
+      NASA SMAP / MSL Dataset &nbsp;·&nbsp; PatchTST Transformer
+    </div>
+    <h1 class="text-4xl sm:text-5xl font-bold mb-4 gradient-text leading-tight">
+      AI-Based Satellite<br>Anomaly Detection
+    </h1>
+    <p class="text-slate-400 text-lg max-w-xl mx-auto">
+      Spacecraft health monitoring using unsupervised deep learning on multivariate telemetry data.
+    </p>
+    <p class="text-slate-500 text-sm mt-3">BMSCE · Dept. of Machine Learning · 2025-26</p>
+  </div>
+</section>
+
+<!-- ── Tabs ──────────────────────────────────────────────────── -->
+<div class="relative max-w-7xl mx-auto px-6 pb-20" style="z-index:1">
+
+  <div class="flex gap-2 mb-8 p-1 glass rounded-xl w-fit mx-auto">
+    <button class="tab-btn active px-5 py-2.5 rounded-lg text-sm font-medium" onclick="switchTab('dashboard')">📊 Dashboard</button>
+    <button class="tab-btn px-5 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white" onclick="switchTab('channel')">🔍 Channel</button>
+    <button class="tab-btn px-5 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white" onclick="switchTab('predict')">📤 Predict</button>
+    <button class="tab-btn px-5 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white" onclick="switchTab('about')">ℹ️ About</button>
+  </div>
+
+  <!-- ══ TAB: Dashboard ════════════════════════════════════════ -->
+  <div id="tab-dashboard" class="fade-in">
+
+    <!-- Summary cards -->
+    <div id="summary-cards" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      <div class="metric-card rounded-xl p-4 col-span-2 sm:col-span-3 lg:col-span-6 flex items-center justify-center min-h-[80px]">
+        <div class="spinner"></div>
+        <span class="ml-3 text-slate-400 text-sm">Loading results…</span>
+      </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="glass rounded-2xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="font-semibold text-slate-200">All Channel Results</h2>
+        <input id="search" type="text" placeholder="Search channel…"
+          class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500 w-40"
+          oninput="filterTable()"/>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900/60">
+            <tr>
+              <th class="px-6 py-3 text-left text-slate-400 font-medium cursor-pointer hover:text-white" onclick="sortTable('series')">Channel ↕</th>
+              <th class="px-6 py-3 text-left text-slate-400 font-medium cursor-pointer hover:text-white" onclick="sortTable('auc_roc')">AUC-ROC ↕</th>
+              <th class="px-6 py-3 text-left text-slate-400 font-medium cursor-pointer hover:text-white" onclick="sortTable('auc_pr')">AUC-PR ↕</th>
+              <th class="px-6 py-3 text-left text-slate-400 font-medium cursor-pointer hover:text-white" onclick="sortTable('f1')">F1 ↕</th>
+              <th class="px-6 py-3 text-left text-slate-400 font-medium cursor-pointer hover:text-white" onclick="sortTable('accuracy')">Accuracy ↕</th>
+              <th class="px-6 py-3 text-left text-slate-400 font-medium">Action</th>
+            </tr>
+          </thead>
+          <tbody id="results-tbody" class="divide-y divide-slate-800/50"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: Channel ══════════════════════════════════════════ -->
+  <div id="tab-channel" class="fade-in hidden">
+    <div class="glass rounded-2xl p-6 mb-6">
+      <h2 class="font-semibold text-slate-200 mb-4">Analyse a Channel</h2>
+      <div class="flex gap-3 flex-wrap">
+        <select id="ch-select"
+          class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-blue-500 min-w-[160px]">
+          {% for ch in channels %}
+          <option value="{{ ch }}">{{ ch }}</option>
+          {% endfor %}
+        </select>
+        <button onclick="analyseChannel()"
+          class="px-6 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 text-white text-sm font-medium hover:opacity-90 transition">
+          Analyse →
+        </button>
+      </div>
+    </div>
+
+    <div id="ch-loading" class="hidden flex-col items-center py-16">
+      <div class="spinner mb-3"></div>
+      <p class="text-slate-400 text-sm">Running inference…</p>
+    </div>
+
+    <div id="ch-results" class="hidden fade-in">
+      <!-- Metric pills -->
+      <div id="ch-metrics" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4 mb-6"></div>
+      <!-- Timeline plot -->
+      <div class="glass rounded-2xl p-4 mb-6">
+        <img id="ch-timeline" class="w-full rounded-lg" alt="timeline"/>
+      </div>
+      <!-- ROC + CM side by side -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass rounded-2xl p-4">
+          <img id="ch-roc" class="w-full rounded-lg" alt="roc"/>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <img id="ch-cm" class="w-full rounded-lg" alt="cm"/>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: Predict ══════════════════════════════════════════ -->
+  <div id="tab-predict" class="fade-in hidden">
+    <div class="glass rounded-2xl p-6 mb-6">
+      <h2 class="font-semibold text-slate-200 mb-1">Upload Telemetry File</h2>
+      <p class="text-slate-500 text-sm mb-5">Upload a <span class="mono text-blue-400">.npy</span> file. The model will score each window and detect anomalies.</p>
+      <div class="flex flex-wrap gap-4 items-end">
+        <div>
+          <label class="block text-slate-400 text-xs mb-1.5">Select Channel Model</label>
+          <select id="pred-channel"
+            class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-blue-500 min-w-[160px]">
+            {% for ch in channels %}
+            <option value="{{ ch }}">{{ ch }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-slate-400 text-xs mb-1.5">.npy file</label>
+          <input type="file" id="pred-file" accept=".npy"
+            class="block text-sm text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"/>
+        </div>
+        <button onclick="runPredict()"
+          class="px-6 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-medium hover:opacity-90 transition">
+          🚀 Run Detection
+        </button>
+      </div>
+    </div>
+
+    <div id="pred-loading" class="hidden flex flex-col items-center py-16">
+      <div class="spinner mb-3"></div>
+      <p class="text-slate-400 text-sm">Processing file…</p>
+    </div>
+
+    <div id="pred-results" class="hidden fade-in">
+      <div id="pred-metrics" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6"></div>
+      <div class="glass rounded-2xl p-4 mb-6">
+        <img id="pred-plot" class="w-full rounded-lg" alt="pred"/>
+      </div>
+      <div class="glass rounded-2xl p-6">
+        <h3 class="font-semibold text-slate-200 mb-3">Top-10 Anomaly Windows</h3>
+        <div id="pred-top" class="grid grid-cols-2 sm:grid-cols-5 gap-3"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TAB: About ════════════════════════════════════════════ -->
+  <div id="tab-about" class="fade-in hidden max-w-3xl mx-auto">
+    <div class="glass rounded-2xl p-8 space-y-6">
+      <div>
+        <h2 class="text-2xl font-bold gradient-text mb-2">About This System</h2>
+        <p class="text-slate-400 text-sm leading-relaxed">
+          AI-Based Satellite Anomaly Detection for Spacecraft Health Monitoring — Mini Project, BMSCE 2025-26.
+        </p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="bg-slate-900/60 rounded-xl p-4">
+          <div class="text-blue-400 text-sm font-semibold mb-2">🏛 Model Architecture</div>
+          <p class="text-slate-400 text-sm">PatchTST — Patch Time Series Transformer. One model per telemetry channel. Trained only on normal data (unsupervised). Anomaly score = forecasting error.</p>
+        </div>
+        <div class="bg-slate-900/60 rounded-xl p-4">
+          <div class="text-violet-400 text-sm font-semibold mb-2">📡 Dataset</div>
+          <p class="text-slate-400 text-sm">NASA SMAP / MSL telemetry. 82 channels of multivariate spacecraft sensor data with labeled anomaly intervals. Available on Kaggle.</p>
+        </div>
+        <div class="bg-slate-900/60 rounded-xl p-4">
+          <div class="text-emerald-400 text-sm font-semibold mb-2">📈 Key Results</div>
+          <ul class="text-slate-400 text-sm space-y-1 mono">
+            <li>Avg AUC-ROC : 0.882</li>
+            <li>Avg F1      : 0.689</li>
+            <li>Avg Accuracy: 0.957</li>
+            <li>Best (M-6)  : F1=0.920</li>
+          </ul>
+        </div>
+        <div class="bg-slate-900/60 rounded-xl p-4">
+          <div class="text-amber-400 text-sm font-semibold mb-2">👩‍💻 Team</div>
+          <ul class="text-slate-400 text-sm space-y-1">
+            <li>Sahana BK — 1BM23AI162</li>
+            <li>Sarayu KS — 1BM23AI171</li>
+            <li>Shamratha G — 1BM23AI173</li>
+          </ul>
+          <p class="text-slate-500 text-xs mt-2">Guide: Sowmya Lakshmi BS</p>
+        </div>
+      </div>
+      <div class="bg-slate-900/60 rounded-xl p-4">
+        <div class="text-slate-300 text-sm font-semibold mb-3">🔗 Links</div>
+        <div class="flex flex-wrap gap-3">
+          <a href="https://github.com/YOUR_USERNAME/satellite-anomaly-detection" target="_blank"
+            class="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-slate-300 transition">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.015 2.896-.015 3.286 0 .319.216.694.825.576C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
+            GitHub
+          </a>
+          <a href="#" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-slate-300 transition">
+            📄 Paper (coming soon)
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /max-w-7xl -->
+
+<!-- ── Scripts ─────────────────────────────────────────────── -->
+<script>
+// ── Stars background ──────────────────────────────────────────
+const canvas = document.getElementById("stars");
+const ctx = canvas.getContext("2d");
+let stars = [];
+function initStars() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  stars = Array.from({length: 150}, () => ({
+    x: Math.random()*canvas.width,
+    y: Math.random()*canvas.height,
+    r: Math.random()*1.5+0.3,
+    o: Math.random()*0.7+0.1,
+    s: Math.random()*0.3+0.05
+  }));
+}
+function drawStars() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  stars.forEach(s => {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,255,${s.o})`;
+    ctx.fill();
+    s.o += Math.sin(Date.now()*s.s*0.001)*0.005;
+  });
+  requestAnimationFrame(drawStars);
+}
+initStars();
+drawStars();
+window.addEventListener("resize", initStars);
+
+// ── Tab switching ─────────────────────────────────────────────
+function switchTab(name) {
+  ["dashboard","channel","predict","about"].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.add("hidden");
+  });
+  document.getElementById(`tab-${name}`).classList.remove("hidden");
+  document.querySelectorAll(".tab-btn").forEach((b,i) => {
+    b.classList.remove("active");
+    b.classList.add("text-slate-400");
+  });
+  const idx = ["dashboard","channel","predict","about"].indexOf(name);
+  const btns = document.querySelectorAll(".tab-btn");
+  btns[idx].classList.add("active");
+  btns[idx].classList.remove("text-slate-400");
+  if (name === "dashboard" && !window._dashboardLoaded) loadDashboard();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────
+let allRecords = [], sortKey = "auc_roc", sortAsc = false;
+
+async function loadDashboard() {
+  const res  = await fetch("/api/dashboard");
+  const data = await res.json();
+  if (data.error) return;
+
+  window._dashboardLoaded = true;
+  const s = data.summary;
+
+  // Summary cards
+  const cards = [
+    {label:"Channels", value: s.total,    color:"text-blue-400"},
+    {label:"Avg AUC",  value: s.mean_auc, color:"text-violet-400"},
+    {label:"Avg F1",   value: s.mean_f1,  color:"text-emerald-400"},
+    {label:"Avg Acc",  value: s.mean_acc, color:"text-amber-400"},
+    {label:"AUC≥0.90", value: s.high_auc, color:"text-teal-400"},
+    {label:"F1≥0.70",  value: s.high_f1,  color:"text-pink-400"},
+  ];
+  document.getElementById("summary-cards").innerHTML = cards.map(c => `
+    <div class="metric-card rounded-xl p-5 text-center">
+      <div class="text-2xl font-bold ${c.color} mono">${c.value}</div>
+      <div class="text-slate-400 text-xs mt-1">${c.label}</div>
+    </div>`).join("");
+
+  allRecords = data.records;
+  renderTable(allRecords);
+}
+
+function renderTable(records) {
+  const tbody = document.getElementById("results-tbody");
+  tbody.innerHTML = records.map(r => `
+    <tr class="table-row transition">
+      <td class="px-6 py-3 mono font-medium text-blue-300">${r.series}</td>
+      <td class="px-6 py-3">${badge(r.auc_roc)}</td>
+      <td class="px-6 py-3">${badge(r.auc_pr)}</td>
+      <td class="px-6 py-3">${badge(r.f1)}</td>
+      <td class="px-6 py-3">${badge(r.accuracy)}</td>
+      <td class="px-6 py-3">
+        <button onclick="goChannel('${r.series}')"
+          class="px-3 py-1.5 rounded-lg text-xs bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 transition border border-blue-600/30">
+          Analyse →
+        </button>
+      </td>
+    </tr>`).join("");
+}
+
+function badge(v) {
+  const c = v >= 0.90 ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+          : v >= 0.70 ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+          :             "bg-red-500/15 text-red-400 border-red-500/30";
+  return `<span class="px-2 py-0.5 rounded-md border mono text-xs ${c}">${v.toFixed(4)}</span>`;
+}
+
+function filterTable() {
+  const q = document.getElementById("search").value.toLowerCase();
+  renderTable(allRecords.filter(r => r.series.toLowerCase().includes(q)));
+}
+
+function sortTable(key) {
+  if (sortKey === key) sortAsc = !sortAsc;
+  else { sortKey = key; sortAsc = false; }
+  const sorted = [...allRecords].sort((a,b) =>
+    sortAsc ? (a[key] > b[key] ? 1 : -1) : (a[key] < b[key] ? 1 : -1)
+  );
+  renderTable(sorted);
+}
+
+function goChannel(cid) {
+  switchTab("channel");
+  document.getElementById("ch-select").value = cid;
+  analyseChannel();
+}
+
+// ── Channel Analysis ──────────────────────────────────────────
+async function analyseChannel() {
+  const cid = document.getElementById("ch-select").value;
+  document.getElementById("ch-results").classList.add("hidden");
+  document.getElementById("ch-loading").classList.remove("hidden");
+  document.getElementById("ch-loading").classList.add("flex");
+
+  const res  = await fetch(`/api/channel/${cid}`);
+  const data = await res.json();
+
+  document.getElementById("ch-loading").classList.add("hidden");
+  document.getElementById("ch-loading").classList.remove("flex");
+
+  if (data.error) {
+    alert(data.error); return;
+  }
+
+  const m = data.metrics;
+  const pills = [
+    {label:"AUC-ROC",   value:m.auc_roc,   c:"text-blue-400"},
+    {label:"AUC-PR",    value:m.auc_pr,    c:"text-violet-400"},
+    {label:"F1-Score",  value:m.f1,        c:"text-emerald-400"},
+    {label:"Precision", value:m.precision, c:"text-amber-400"},
+    {label:"Recall",    value:m.recall,    c:"text-pink-400"},
+  ];
+  document.getElementById("ch-metrics").innerHTML = pills.map(p => `
+    <div class="metric-card rounded-xl p-4 text-center">
+      <div class="text-xl font-bold ${p.c} mono">${p.value.toFixed(4)}</div>
+      <div class="text-slate-400 text-xs mt-1">${p.label}</div>
+    </div>`).join("") + `
+    <div class="metric-card rounded-xl p-4 text-center col-span-2 sm:col-span-1">
+      <div class="text-sm font-semibold text-slate-300 mono">${m.n_anomaly} / ${m.n_windows}</div>
+      <div class="text-slate-400 text-xs mt-1">Anomaly Windows</div>
+    </div>`;
+
+  document.getElementById("ch-timeline").src = `data:image/png;base64,${data.plots.timeline}`;
+  document.getElementById("ch-roc").src       = `data:image/png;base64,${data.plots.roc}`;
+  document.getElementById("ch-cm").src        = `data:image/png;base64,${data.plots.cm}`;
+  document.getElementById("ch-results").classList.remove("hidden");
+}
+
+// ── Predict ───────────────────────────────────────────────────
+async function runPredict() {
+  const file = document.getElementById("pred-file").files[0];
+  if (!file) { alert("Please select a .npy file"); return; }
+  const channel = document.getElementById("pred-channel").value;
+
+  document.getElementById("pred-results").classList.add("hidden");
+  document.getElementById("pred-loading").classList.remove("hidden");
+  document.getElementById("pred-loading").classList.add("flex");
+
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("channel", channel);
+
+  const res  = await fetch("/api/predict", {method:"POST", body:fd});
+  const data = await res.json();
+
+  document.getElementById("pred-loading").classList.add("hidden");
+  document.getElementById("pred-loading").classList.remove("flex");
+
+  if (data.error) { alert(data.error); return; }
+
+  const cards = [
+    {label:"Total Windows",  value:data.n_windows,          c:"text-blue-400"},
+    {label:"Anomaly Windows",value:data.n_anomaly,          c:"text-red-400"},
+    {label:"Anomaly %",      value:data.pct_anomaly+"%",    c:"text-amber-400"},
+    {label:"Threshold",      value:data.threshold.toFixed(4),c:"text-violet-400"},
+    {label:"Max Score",      value:data.max_score.toFixed(4),c:"text-emerald-400"},
+    {label:"Model Used",     value:channel,                  c:"text-teal-400"},
+  ];
+  document.getElementById("pred-metrics").innerHTML = cards.map(c => `
+    <div class="metric-card rounded-xl p-4 text-center">
+      <div class="text-lg font-bold ${c.c} mono">${c.value}</div>
+      <div class="text-slate-400 text-xs mt-1">${c.label}</div>
+    </div>`).join("");
+
+  document.getElementById("pred-plot").src = `data:image/png;base64,${data.plot}`;
+
+  document.getElementById("pred-top").innerHTML = data.top_windows.map((w,i) => `
+    <div class="bg-slate-800/60 rounded-lg p-3 text-center border border-slate-700/50">
+      <div class="text-xs text-slate-500 mb-1">#${i+1}</div>
+      <div class="mono text-sm text-amber-400 font-medium">Win ${w.index}</div>
+      <div class="mono text-xs text-slate-400">${w.score.toFixed(5)}</div>
+    </div>`).join("");
+
+  document.getElementById("pred-results").classList.remove("hidden");
+}
+
+// ── Init ──────────────────────────────────────────────────────
+loadDashboard();
+</script>
+</body>
+</html>
